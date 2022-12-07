@@ -54,12 +54,14 @@ namespace Ulysses
                 if (map.ContainsKey(items[i]))
                 {
                     map[items[i]].count++;
-                    map[items[i]].next.AddLast(items[i + 1]);
+                    if (i < str.Length - 1)
+                        map[items[i]].next.AddLast(items[i + 1]);
                 }
                 else
                 {
                     map.Add(items[i], new Word { count = 1, next = new LinkedList<string>() });
-                    map[items[i]].next.AddLast(items[i + 1]);
+                    if (i < str.Length - 1)
+                        map[items[i]].next.AddLast(items[i + 1]);
                 }
             }
             //return list and last word
@@ -136,6 +138,10 @@ namespace Ulysses
                             {
                                 var jobResult = SeperateWords(sb, lastword);
                                 lastword = jobResult.Item2;
+
+                                if (map.Count > 0 && jobResult.Item1.Count > 0)
+                                    map.LastOrDefault().Value.next.AddLast(jobResult.Item1.Keys.First());
+
                                 foreach (var item in jobResult.Item1)
                                     map.AddOrUpdate(item.Key, item.Value, (key, v) =>
                                     new Word
