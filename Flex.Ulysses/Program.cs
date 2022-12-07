@@ -1,4 +1,5 @@
-﻿using Flex.Ulysses.Models;
+﻿using Flex.Ulysses.Helpers;
+using Flex.Ulysses.Models;
 using System;
 using System.Collections;
 using System.Collections.Concurrent;
@@ -17,7 +18,7 @@ namespace Ulysses
 {
     internal class Program
     {
-        public static ConcurrentDictionary<string, int> MergeDictionary(ConcurrentDictionary<string, int> a, ConcurrentDictionary<string, int> b)
+        public static ConcurrentDictionary<string, int> MergeDictionaries(ConcurrentDictionary<string, int> a, ConcurrentDictionary<string, int> b)
         {
             foreach (var item in b)
                 a.AddOrUpdate(item.Key, item.Value, (key, v) => item.Value + v);
@@ -29,11 +30,36 @@ namespace Ulysses
         {
             DateTime start = DateTime.Now;
             Dictionary<string, Word> map = new Dictionary<string, Word>();
-            var str = sb.ToString().Replace("’", "||");
+            var str = sb.ToString();
 
 
-            Regex r = new Regex("(?:[^a-z| ]|(?<=['\"])s)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
-            string[] items = r.Replace(str, " ").Replace("||", "'").Replace("|", "").ToLower().Split(' ').Where(x => x != "").ToArray();
+            Regex r = new Regex("(?:[^a-z’ ]|(?<=['\"])s)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+            List<string> items = new List<string>();
+            foreach (var item in r.Replace(str, " ").ToLower().Split(' ').Where(x => !ExceptionWords.remove.Contains(x)))
+            {                   
+                if (ExceptionWords.exceptions.ContainsKey(item))
+                {
+                    items.Add(ExceptionWords.exceptions[item].Item1);
+                    items.Add(ExceptionWords.exceptions[item].Item2);
+                }
+                else if (item.Contains('’'))
+                {
+                    if (item.Length < 2) continue;
+
+                    string s = item;
+                    if (item[0] == '’')
+                        s = item.Substring(1, item.Length - 1);
+
+                    if (item.Contains('’'))
+                    {
+                        int ind = item.IndexOf('’');
+                        if (ind != -1)
+                            items.Add(s.Substring(0, ind));
+                    }
+                }
+                else
+                    items.Add(item);
+            }
 
             if (!string.IsNullOrEmpty(priorLastWord))
             {
@@ -46,23 +72,22 @@ namespace Ulysses
             }
 
             bool isWaste = Regex.IsMatch(str.Substring(str.Length - 1, 1), @"^[a-z]+$");
-            for (int i = 0; i < (isWaste ? items.Length - 1 : items.Length); i++)
+            for (int i = 0; i < (isWaste ? items.Count - 1 : items.Count); i++)
             {
                 if (map.ContainsKey(items[i]))
                 {
                     map[items[i]].count++;
-                    if (i < items.Length - 1)
+                    if (i < items.Count - 1)
                         map[items[i]].Next.AddOrUpdate(items[i + 1], 1, (key, value) => value + 1);
                 }
                 else
                 {
                     map.Add(items[i], new Word { count = 1, Next = new ConcurrentDictionary<string, int>() });
-                    if (i < items.Length - 1)
+                    if (i < items.Count - 1)
                         map[items[i]].Next.AddOrUpdate(items[i + 1], 1, (key, value) => 1);
                 }
             }
-            //return list and last word
-            return (map.OrderByDescending(x => x.Value.count).ToDictionary(a => a.Key, b => b.Value), isWaste ? items[items.Length - 1] : "");
+            return (map, isWaste ? items[items.Count - 1] : "");
         }
 
         public static void Next(ConcurrentDictionary<string, Word> map)
@@ -84,6 +109,9 @@ namespace Ulysses
 
         static async Task Main(string[] args)
         {
+
+            ExceptionWords.Fill();
+
             ConcurrentDictionary<string, Word> map = new ConcurrentDictionary<string, Word>();
 
             const int bufferSize = 65566;
@@ -123,7 +151,7 @@ namespace Ulysses
                                     new Word
                                     {
                                         count = v.count + item.Value.count,
-                                        Next = MergeDictionary(v.Next,item.Value.Next)
+                                        Next = MergeDictionaries(v.Next, item.Value.Next)
                                     });
                             }
                             totalRead += count;
