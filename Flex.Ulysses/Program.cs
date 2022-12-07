@@ -17,14 +17,11 @@ namespace Ulysses
 {
     internal class Program
     {
-        public static LinkedList<string> MergeLinkedList(LinkedList<string> a, LinkedList<string> b)
+        public static ConcurrentDictionary<string, int> MergeDictionary(ConcurrentDictionary<string, int> a, ConcurrentDictionary<string, int> b)
         {
-            var node = b.First;
-            while (node != null)
-            {
-                a.AddLast(node.Value);
-                node = node.Next;
-            }
+            foreach (var item in b)
+                a.AddOrUpdate(item.Key, item.Value, (key, v) => item.Value + v);
+
             return a;
         }
 
@@ -32,10 +29,10 @@ namespace Ulysses
         {
             DateTime start = DateTime.Now;
             Dictionary<string, Word> map = new Dictionary<string, Word>();
-            var str = sb.ToString().Replace("'", "||");
+            var str = sb.ToString().Replace("’", "||");
 
 
-            Regex r = new Regex("(?:[^a-z_ ]|(?<=['\"])s)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+            Regex r = new Regex("(?:[^a-z| ]|(?<=['\"])s)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
             string[] items = r.Replace(str, " ").Replace("||", "'").Replace("|", "").ToLower().Split(' ').Where(x => x != "").ToArray();
 
             if (!string.IsNullOrEmpty(priorLastWord))
@@ -54,14 +51,14 @@ namespace Ulysses
                 if (map.ContainsKey(items[i]))
                 {
                     map[items[i]].count++;
-                    if (i < str.Length - 1)
-                        map[items[i]].next.AddLast(items[i + 1]);
+                    if (i < items.Length - 1)
+                        map[items[i]].Next.AddOrUpdate(items[i + 1], 1, (key, value) => value + 1);
                 }
                 else
                 {
-                    map.Add(items[i], new Word { count = 1, next = new LinkedList<string>() });
-                    if (i < str.Length - 1)
-                        map[items[i]].next.AddLast(items[i + 1]);
+                    map.Add(items[i], new Word { count = 1, Next = new ConcurrentDictionary<string, int>() });
+                    if (i < items.Length - 1)
+                        map[items[i]].Next.AddOrUpdate(items[i + 1], 1, (key, value) => 1);
                 }
             }
             //return list and last word
@@ -70,40 +67,19 @@ namespace Ulysses
 
         public static void Next(ConcurrentDictionary<string, Word> map)
         {
-            DateTime start = DateTime.Now;
-            ConcurrentDictionary<string, int> mapNext = new ConcurrentDictionary<string, int>();
             var mapList = map.OrderByDescending(x => x.Value.count).Take(20).ToDictionary(a => a.Key, b => b.Value);
 
-            Parallel.ForEach(mapList, new ParallelOptions { MaxDegreeOfParallelism = 10 }, (item) =>
-            {
-                LinkedListNode<string>? node = item.Value.next.First;
-                while (node != null)
-                {
-                    mapNext.AddOrUpdate(node.Value, 1, (key, v) => v + 1);
-                    node = node.Next;
-                }
-            });
-
-            var nextList = mapNext
-                .OrderByDescending(c => c.Value)
-                .Take(5)
-                .ToDictionary(a => a.Key, b => b.Value);
-
-
-            Console.WriteLine("TOP 20");
             foreach (var item in mapList)
             {
-                Console.WriteLine($"{item.Key}:{item.Value.count}");
+                Console.Write($"{item.Key}({item.Value.count}) : ");
+
+                foreach (var next in item.Value.Next.OrderByDescending(x => x.Value).Take(5).ToDictionary(a => a.Key, b => b.Value))
+                {
+                    Console.Write($" {next.Key}({next.Value})");
+                }
+                Console.WriteLine();
             }
 
-            Console.WriteLine();
-            Console.WriteLine("NEXT 5");
-            foreach (var item in nextList)
-            {
-                Console.WriteLine($"{item.Key}:{item.Value}");
-            }
-            Console.WriteLine($"Time : {DateTime.Now.Subtract(start).TotalSeconds}");
-            Console.WriteLine();
         }
 
         static async Task Main(string[] args)
@@ -140,15 +116,14 @@ namespace Ulysses
                                 lastword = jobResult.Item2;
 
                                 if (map.Count > 0 && jobResult.Item1.Count > 0)
-                                    map.LastOrDefault().Value.next.AddLast(jobResult.Item1.Keys.First());
+                                    map.LastOrDefault().Value.Next.AddOrUpdate(jobResult.Item1.Keys.First(), 1, (key, value) => value + 1);
 
                                 foreach (var item in jobResult.Item1)
                                     map.AddOrUpdate(item.Key, item.Value, (key, v) =>
                                     new Word
                                     {
-                                        title = v.title,
                                         count = v.count + item.Value.count,
-                                        next = MergeLinkedList(v.next, item.Value.next)
+                                        Next = MergeDictionary(v.Next,item.Value.Next)
                                     });
                             }
                             totalRead += count;
